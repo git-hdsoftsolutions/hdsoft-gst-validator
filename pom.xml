@@ -11,27 +11,69 @@
     <groupId>com.hdsoft.gst</groupId>
     <artifactId>gstin-validator</artifactId>
     <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>Hdsoft GSTIN Validator</name>
+    <description>
+        Java 8 library that validates Indian GSTINs offline (format, state code, check digit)
+        and looks them up on the GST portal.
+    </description>
+    <url>https://github.com/git-hdsoftsolutions/hdsoft-gst-validator</url>
+
+    <organization>
+        <name>Hdsoft Solutions</name>
+    </organization>
+
+    <developers>
+        <developer>
+            <id>hdsoft</id>
+            <name>Hdsoft Solutions</name>
+            <email>hdsoftsolutions@yandex.com</email>
+            <organization>Hdsoft Solutions</organization>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/git-hdsoftsolutions/hdsoft-gst-validator</url>
+        <connection>scm:git:https://github.com/git-hdsoftsolutions/hdsoft-gst-validator.git</connection>
+        <developerConnection>scm:git:https://github.com/git-hdsoftsolutions/hdsoft-gst-validator.git</developerConnection>
+    </scm>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Java 1.8 is the only supported language level and API level. -->
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
+
+        <playwright.version>1.55.0</playwright.version>
+        <gson.version>2.11.0</gson.version>
+        <junit.version>4.13.2</junit.version>
     </properties>
 
     <dependencies>
 
-        <!-- Playwright Java -->
+        <!-- Playwright Java: headless browser used for the GST portal lookup -->
         <dependency>
             <groupId>com.microsoft.playwright</groupId>
             <artifactId>playwright</artifactId>
-            <version>1.55.0</version>
+            <version>${playwright.version}</version>
         </dependency>
 
-        <!-- GSON -->
+        <!-- GSON: JSON output -->
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
-            <version>2.11.0</version>
+            <version>${gson.version}</version>
+        </dependency>
+
+        <!-- Tests -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
         </dependency>
 
     </dependencies>
@@ -46,55 +88,88 @@
                 <configuration>
                     <source>1.8</source>
                     <target>1.8</target>
+                    <showWarnings>true</showWarnings>
+                    <compilerArgs>
+                        <arg>-Xlint:all,-options</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.8.1</version>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Automatic-Module-Name>com.hdsoft.gst</Automatic-Module-Name>
+                            <Implementation-Title>${project.name}</Implementation-Title>
+                            <Implementation-Version>${project.version}</Implementation-Version>
+                            <Implementation-Vendor>Hdsoft Solutions</Implementation-Vendor>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.3.1</version>
                 <executions>
                     <execution>
-                        <id>copy-dependencies</id>
-                        <phase>package</phase>
+                        <id>attach-sources</id>
                         <goals>
-                            <goal>copy-dependencies</goal>
+                            <goal>jar-no-fork</goal>
                         </goals>
-                        <configuration>
-                            <outputDirectory>
-                                ${project.build.directory}/lib
-                            </outputDirectory>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.7.1</version>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.6.3</version>
+                <configuration>
+                    <source>8</source>
+                    <encoding>UTF-8</encoding>
+                    <quiet>true</quiet>
+                </configuration>
                 <executions>
                     <execution>
-                        <id>jar-with-dependencies</id>
-                        <phase>package</phase>
+                        <id>attach-javadocs</id>
                         <goals>
-                            <goal>single</goal>
+                            <goal>jar</goal>
                         </goals>
-                        <configuration>
-                            <archive>
-                                <manifest>
-                                    <mainClass>
-                                        com.hdsoft.gst.Test
-                                    </mainClass>
-                                </manifest>
-                            </archive>
+                    </execution>
+                </executions>
+            </plugin>
 
-                            <descriptorRefs>
-                                <descriptorRef>jar-with-dependencies</descriptorRef>
-                            </descriptorRefs>
-
-                            <appendAssemblyId>true</appendAssemblyId>
-                        </configuration>
+            <!-- Fails the build if the code uses any API that is not part of Java 8,
+                 even when it is compiled on a newer JDK. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>animal-sniffer-maven-plugin</artifactId>
+                <version>1.23</version>
+                <configuration>
+                    <signature>
+                        <groupId>org.codehaus.mojo.signature</groupId>
+                        <artifactId>java18</artifactId>
+                        <version>1.0</version>
+                    </signature>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>check-java8-api</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

@@ -11,30 +11,65 @@ import com.microsoft.playwright.options.WaitUntilState;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 
+/**
+ * Looks a GSTIN up on the public GST portal ("Search Taxpayer") and returns the result as JSON.
+ * <p>
+ * Each call to {@link #validateGSTIN(String)} is a single, fresh request: the GSTIN is first checked offline with
+ * {@link GSTINOfflineValidator}, then a headless browser opens the portal, the portal's CAPTCHA is handed to the
+ * handler registered with {@link #work(BiConsumer)}, and the result page is read. There are no automatic retries;
+ * if a request fails (for example because the CAPTCHA was wrong) make a new call.
+ * <p>
+ * The result is read from the portal's HTML, so it depends on the portal's current page structure.
+ * <p>
+ * Register the CAPTCHA handler before the first call. An instance holds no per-request state, so one
+ * instance may be used for sequential calls; concurrent calls are safe as long as the handler is.
+ */
 public class GSTINValidator {
 
     private static final String GST_SEARCH_URL = "https://services.gst.gov.in/services/searchtp";
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
-    private BiConsumer<BufferedImage, AtomicReference<String>> process;
+    private volatile BiConsumer<BufferedImage, AtomicReference<String>> process;
 
+    /**
+     * Creates a validator. Register a CAPTCHA handler with {@link #work(BiConsumer)} before calling
+     * {@link #validateGSTIN(String)}.
+     */
+    public GSTINValidator() {
+    }
+
+    /**
+     * Validates a GSTIN offline and, if it is well formed, looks it up on the GST portal.
+     * <p>
+     * The returned JSON always contains {@code "success"}. On success it also contains the taxpayer details
+     * read from the portal; on failure it contains {@code "error"} (and {@code "gstin"} when one was supplied).
+     * This method does not throw.
+     *
+     * @param gstin the 15 character GSTIN; surrounding whitespace and letter case are ignored
+     * @return a pretty printed JSON string
+     */
     public String validateGSTIN(String gstin) {
         JsonObject result = new JsonObject();
 
-        if (gstin == null || gstin.trim().isEmpty()) {
+        GSTINCheckResult offline = GSTINOfflineValidator.check(gstin);
+        if (!offline.isValid()) {
             result.addProperty("success", false);
-            result.addProperty("error", "GSTIN cannot be empty.");
+            if (offline.getGstin() != null) {
+                result.addProperty("gstin", offline.getGstin());
+            }
+            result.addProperty("error", offline.getMessage());
             return gson.toJson(result);
         }
 
-        gstin = gstin.trim().toUpperCase();
+        gstin = offline.getGstin();
 
-        if (!isValidGSTINFormat(gstin)) {
+        if (process == null) {
             result.addProperty("success", false);
             result.addProperty("gstin", gstin);
-            result.addProperty("error", "Invalid GSTIN format.");
+            result.addProperty("error", "CAPTCHA handler is not set. Call work(...) before validateGSTIN(...).");
             return gson.toJson(result);
         }
 
@@ -65,7 +100,7 @@ public class GSTINValidator {
 
                 byte[] captchaBytes = captchaImage.screenshot();
 
-                String captcha = showCaptchaDialog(captchaBytes);
+                String captcha = requestCaptcha(captchaBytes);
 
                 if (captcha == null || captcha.trim().isEmpty()) {
                     result.addProperty("success", false);
@@ -299,24 +334,31 @@ public class GSTINValidator {
         return result;
     }
 
+    /**
+     * Registers the handler that shows the portal's CAPTCHA to a person and returns what they typed.
+     * <p>
+     * For every lookup the handler is called once, on the calling thread, with the CAPTCHA image and an
+     * {@link AtomicReference} to put the answer in. It must block until the answer is available (for example by
+     * showing a modal dialog) and leave the reference {@code null} or empty if the user cancels. The portal's
+     * CAPTCHA is six digits.
+     *
+     * @param process the CAPTCHA handler, or {@code null} to remove it
+     */
     public void work(BiConsumer<BufferedImage, AtomicReference<String>> process) {
         this.process = process;
     }
 
-    private String showCaptchaDialog(byte[] captchaBytes) throws Exception {
+    private String requestCaptcha(byte[] captchaBytes) throws IOException {
+        final BiConsumer<BufferedImage, AtomicReference<String>> handler = process;
         final AtomicReference<String> result = new AtomicReference<String>();
         final BufferedImage image = ImageIO.read(new ByteArrayInputStream(captchaBytes));
 
-        if (process == null) {
-            throw new RuntimeException("Process not defined... Not sure on how to show captcha and return it");
+        if (image == null) {
+            throw new IOException("The CAPTCHA image could not be read.");
         }
 
-        process.accept(image, result);
+        handler.accept(image, result);
 
         return result.get();
-    }
-
-    private boolean isValidGSTINFormat(String gstin) {
-        return gstin.matches("^[0-9]{2}" + "[A-Z]{5}" + "[0-9]{4}" + "[A-Z]" + "[1-9A-Z]" + "Z" + "[0-9A-Z]$");
     }
 }
