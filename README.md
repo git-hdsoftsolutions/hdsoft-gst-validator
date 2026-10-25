@@ -1,4 +1,4 @@
-# HDSoft GSTIN Validator
+# Hdsoft GSTIN Validator
 
 A small Java 8 library for validating Indian **GSTIN** numbers.
 
