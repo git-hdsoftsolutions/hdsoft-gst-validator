@@ -13,7 +13,7 @@
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Hdsoft GSTIN Validator</name>
+    <name>HDSoft GSTIN Validator</name>
     <description>
         Java 8 library that validates Indian GSTINs offline (format, state code, check digit)
         and looks them up on the GST portal.
